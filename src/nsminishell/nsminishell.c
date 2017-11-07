@@ -1,0 +1,202 @@
+/*
+
+Zhiyuan(James) Zhang
+
+
+*/
+#include "my.h"
+#include <ncurses.h>
+#include "mylist.h"
+#include <sys/wait.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+pid_t pid;
+int flag = 0;
+
+void sint(int sig) {
+	char prompt[100];
+	prompt[0] = '\0';
+	if(getcwd(prompt, 100) == NULL) {
+		my_str("Getting directory failed\n");
+		exit(1);
+	}
+	if (flag == 1) {
+		flag = 0;
+		kill(pid, SIGINT);
+		my_char('\n');
+	} else {
+		my_char('\n');
+		my_str(prompt);
+		my_str(": ");
+	}
+}
+
+int main() {
+	char prompt[100];
+	int max_x, max_y, y, x, i = 0, n = 0;
+	int input, length, execute = 1;
+	int curr;
+	char line[100];
+	char **args;
+	struct s_node* start = new_node(NULL, NULL, NULL);
+	struct s_node** commands = &start;
+	signal(SIGINT, sint);
+	line[0] = '\0';
+	initscr();
+	raw();
+	keypad(stdscr, TRUE);
+	getmaxyx(stdscr, max_y, max_x);
+	max_y++;
+	max_x++;
+	x = 0;
+	y = 0;
+	while(1) {
+		if (execute) {
+			curr = 0;
+			length = my_strlen(line);
+			if (length > 0) {
+				args = my_str2vect(line);
+				if (!my_strcmp(args[0], "exit")) {
+					printw("Bye!");
+					endwin();
+					exit(0);
+				} else if (!my_strcmp(args[0], "help")) {
+					printw("cd <directory>: Changes the current working directory to <directory>.\nexit: Exits the minishell.\nhelp: Prints a help message listing the built-in commands.\n");
+					y += 3;
+					x = 0;
+					move(y, x);
+				} else if (!my_strcmp(args[0], "cd")) {
+					if (chdir(args[1]) == -1) {
+						printw("Directory does not exist\n");
+						y++;
+						x = 0;
+						move(y, x);
+					}
+				} else if ((args[0][0] == '.') && (args[0][1] == '/')) {
+					pid = fork();
+					if (pid < 0) {
+						printw("Forking Failed\n");
+						endwin();
+						exit(1);
+					} else if (pid == 0) {
+						y++;
+						x = 0;
+						move(y, x);
+						for (i = 0; args[i] != NULL; i++) {
+							;
+						}
+						args[i-1] = NULL;						
+						if (i % 2 == 1) {						
+							if (line[length - 1] == '\0') {
+								line[length - 1] = '\n';
+							}
+							args = my_str2vect(line);
+						}
+						execv(args[0], &args[0]);
+						printw("Executable not found\n");
+						endwin();
+						exit(1);
+					} else {
+						flag = 1;
+						wait(NULL);
+						x = 0;
+						move(y, x);
+						flag = 0;
+					}
+				} else {
+					printw("Invalid command\n");
+					y++;
+					x = 0;
+					move(y, x);
+				}
+			}
+			if(getcwd(prompt, 100) == NULL) {
+				my_str("Getting directory failed\n");
+				exit(1);
+			}
+			mvprintw(y, x, prompt);
+			x += my_strlen(prompt);
+			mvprintw(y, x++, ":");
+			execute = 0;
+			i = 0;
+			line[i] = '\0';
+		}
+		getyx(stdscr, y, x);
+		input = getch();
+		if (input < 20) {
+			noecho();
+		} else {
+			echo();
+		}
+		switch(input) {
+			case KEY_LEFT:
+				move(y, --x);
+				i--;
+				break;
+			case KEY_RIGHT:
+				if (i < curr) {
+					move(y, ++x);
+					i++;
+				}
+				break;
+			case KEY_UP:
+				my_strcpy(line, elem_at(*commands, ++n));
+				printw(line);
+				x = my_strlen(prompt) + my_strlen(line) + 1;
+				move(y, x);
+				break;
+			case KEY_DOWN:
+				my_strcpy(line, elem_at(*commands, --n - 1));
+				printw(line);
+				x = my_strlen(prompt) + my_strlen(line) + 1;
+				move(y, x);
+				break;
+			case KEY_BACKSPACE:
+				if (x > my_strlen(prompt)+1) {
+					x--;
+					delch();
+					line[--i] = 0;
+				} else {
+					move(y, x);
+				}
+				break;
+			case '\n':
+				execute = 1;
+				x = 0;
+				move(++y, x);
+				add_elem(line, commands);
+				break;
+			case 27:
+				clear();
+				endwin();
+				exit(0);
+			case 12:
+				clear();
+				x = 0;
+				y = 0;
+				i = 0;
+				line[i] = '\0';
+				move(y, x);
+				execute = 1;
+				break;
+			case 1:
+				x -= i;
+				i = 0;
+				move(y, x);
+				break;
+			case 5:
+				x = curr + my_strlen(prompt) - 1;
+				i = curr;
+				move(y, x);
+				break;
+			default:
+				line[i++] = input;
+				line[i] = '\0';
+				curr++;
+				break;
+		}
+	}
+	return 0;
+}
